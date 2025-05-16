@@ -11,11 +11,6 @@ function App() {
   const [callResult, setCallResult] = useState(null);
   const [loadingResult, setLoadingResult] = useState(false);
 
-  const [firstName, setFirstName] = useState("");
-  const [lastName, setLastName] = useState("");
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [email, setEmail] = useState("");
-
   useEffect(() => {
     vapi
       .on("call-start", () => {
@@ -37,13 +32,9 @@ function App() {
       });
   }, []);
 
-  const handleInputChange = (setter) => (event) => {
-    setter(event.target.value);
-  };
-
   const handleStart = async () => {
     setLoading(true);
-    const data = await startAssistant(firstName, lastName, email, phoneNumber);
+    const data = await startAssistant(); // Now no parameters needed
     setCallId(data.id);
   };
 
@@ -68,61 +59,25 @@ function App() {
       .catch((error) => alert(error));
   };
 
-  const showForm = !loading && !started && !loadingResult && !callResult;
-  const allFieldsFilled = firstName && lastName && email && phoneNumber;
-
   return (
     <div className="app-container">
-      {showForm && (
-        <>
-          <h1>Contact Details (Required)</h1>
-          <input
-            type="text"
-            placeholder="First Name"
-            value={firstName}
-            className="input-field"
-            onChange={handleInputChange(setFirstName)}
-          />
-          <input
-            type="text"
-            placeholder="Last Name"
-            value={lastName}
-            className="input-field"
-            onChange={handleInputChange(setLastName)}
-          />
-          <input
-            type="email"
-            placeholder="Email address"
-            value={email}
-            className="input-field"
-            onChange={handleInputChange(setEmail)}
-          />
-          <input
-            type="tel"
-            placeholder="Phone number"
-            value={phoneNumber}
-            className="input-field"
-            onChange={handleInputChange(setPhoneNumber)}
-          />
-          {!started && (
-            <button
-              onClick={handleStart}
-              disabled={!allFieldsFilled}
-              className="button"
-            >
-              Start Application Call
-            </button>
-          )}
-        </>
+      {!loading && !started && !loadingResult && !callResult && (
+        <button onClick={handleStart} className="button">
+          Start Assistant
+        </button>
       )}
+
       {loadingResult && <p>Loading call details... please wait</p>}
+
       {!loadingResult && callResult && (
         <div className="call-result">
           <p>Qualified: {callResult.analysis.structuredData.is_qualified.toString()}</p>
           <p>{callResult.summary}</p>
         </div>
       )}
+
       {(loading || loadingResult) && <div className="loading"></div>}
+
       {started && (
         <ActiveCallDetails
           assistantIsSpeaking={assistantIsSpeaking}
