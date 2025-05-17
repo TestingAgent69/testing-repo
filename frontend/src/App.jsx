@@ -2,31 +2,48 @@ import { useState, useEffect } from "react";
 import { vapi, startAssistant, stopAssistant } from "./ai";
 import ActiveCallDetails from "./call/ActiveCallDetails";
 
-// Compute “today” metadata based on selected IANA time zone
+// Compute “today” metadata in a given IANA timezone
 function getTodayInfo(timeZoneId) {
   const now = new Date();
-  // Format a full ISO-like string in the target timezone
-  const isoFormatter = new Intl.DateTimeFormat('sv-SE', {
+
+  // Build ISO timestamp components in that zone
+  const parts = new Intl.DateTimeFormat("sv-SE", {
     timeZone: timeZoneId,
-    year: 'numeric', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false
-  });
-  const [[,, datePart], [timePart]] = isoFormatter.formatToParts(now)
-    .reduce((acc, part) => {
-      if (part.type === 'year' || part.type === 'month' || part.type === 'day') acc[0].push(part.value);
-      if (part.type === 'hour' || part.type === 'minute' || part.type === 'second') acc[1].push(part.value);
-      return acc;
-    }, [[], []]);
-  const iso = `${datePart.replace(/-/g, '-') }T${timePart}`;
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  })
+    .formatToParts(now)
+    .reduce(
+      (acc, p) => {
+        if (["year", "month", "day"].includes(p.type)) acc.date.push(p.value);
+        if (["hour", "minute", "second"].includes(p.type)) acc.time.push(p.value);
+        return acc;
+      },
+      [[], []]
+    );
+
+  const datePart = parts[0].join("-");
+  const timePart = parts[1].join(":");
+  const iso = `${datePart}T${timePart}`;
 
   // Day of week in that timezone
-  const dayOfWeek = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: timeZoneId }).format(now);
+  const dayOfWeek = new Intl.DateTimeFormat("en-US", {
+    weekday: "long",
+    timeZone: timeZoneId,
+  }).format(now);
 
   return { today: iso, dayOfWeek, timeZone: timeZoneId };
 }
 
 export default function App() {
+  const [selectedTZ, setSelectedTZ] = useState(
+    Intl.DateTimeFormat().resolvedOptions().timeZone
+  );
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [assistantIsSpeaking, setAssistantIsSpeaking] = useState(false);
@@ -34,10 +51,6 @@ export default function App() {
   const [callId, setCallId] = useState("");
   const [callResult, setCallResult] = useState(null);
   const [loadingResult, setLoadingResult] = useState(false);
-
-  // Let user pick an IANA timezone
-  const localTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
-  const [selectedTZ, setSelectedTZ] = useState(localTZ);
 
   useEffect(() => {
     vapi
@@ -49,77 +62,71 @@ export default function App() {
         setStarted(false);
         setLoading(false);
       })
-      .on("speech-start", () => {
-        setAssistantIsSpeaking(true);
-      })
-      .on("speech-end", () => {
-        setAssistantIsSpeaking(false);
-      })
-      .on("volume-level", (level) => {
-        setVolumeLevel(level);
-      });
+      .on("speech-start", () => setAssistantIsSpeaking(true))
+      .on("speech-end", () => setAssistantIsSpeaking(false))
+      .on("volume-level", (lvl) => setVolumeLevel(lvl));
   }, []);
 
   const handleStart = async () => {
-    setLoading(true);
-
-    // Compute metadata for the selected timezone
-    const todayInfo = getTodayInfo(selectedTZ);
-
-    // Start assistant with only today metadata
-    const data = await startAssistant(todayInfo);
-    setCallId(data.id);
+    try {
+      setLoading(true);
+      const meta = getTodayInfo(selectedTZ);
+      console.log("Starting assistant with:", meta);
+      const data = await startAssistant(meta);
+      console.log("Started callId=", data.id);
+      setCallId(data.id);
+    } catch (err) {
+      console.error(err);
+      alert("Error starting assistant—see console.");
+      setLoading(false);
+    }
   };
 
   const handleStop = () => {
     stopAssistant();
-    getCallDetails();
+    pollForResults();
   };
 
-  const getCallDetails = (interval = 3000) => {
+  const pollForResults = (interval = 3000) => {
     setLoadingResult(true);
-    fetch("/call-details?call_id=" + callId)
+    fetch(`/call-details?call_id=${callId}`)
       .then((r) => r.json())
       .then((data) => {
         if (data.analysis && data.summary) {
           setCallResult(data);
           setLoadingResult(false);
         } else {
-          setTimeout(() => getCallDetails(interval), interval);
+          setTimeout(() => pollForResults(interval), interval);
         }
       })
-      .catch((err) => alert(err));
+      .catch((e) => {
+        console.error(e);
+        alert("Error fetching call details.");
+      });
   };
 
   return (
     <div className="app-container">
-      {!loading && !started && !loadingResult && !callResult && (
+      {!started && !loading && !callResult && !loadingResult && (
         <div>
           <h2>Select Your Time Zone</h2>
-          <select value={selectedTZ} onChange={e => setSelectedTZ(e.target.value)}>
-            <option value={localTZ}>{localTZ} (Local)</option>
+          <select
+            value={selectedTZ}
+            onChange={(e) => setSelectedTZ(e.target.value)}
+          >
+            <option value={selectedTZ}>{`${selectedTZ} (Local)`}</option>
             <option value="UTC">UTC</option>
-            <option value="America/New_York">America/New_York (EST/EDT)</option>
-            <option value="Europe/London">Europe/London (GMT/BST)</option>
-            <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
-            {/* Add more IANA zones as needed */}
+            <option value="America/New_York">America/New_York</option>
+            <option value="Europe/London">Europe/London</option>
+            <option value="Asia/Kolkata">Asia/Kolkata</option>
           </select>
-          <button onClick={handleStart} className="button" style={{ marginLeft: '1rem' }}>
+          <button onClick={handleStart} className="button">
             Start Assistant
           </button>
         </div>
       )}
 
-      {loadingResult && <p>Loading call details... please wait</p>}
-
-      {!loadingResult && callResult && (
-        <div className="call-result">
-          <p>Qualified: {callResult.analysis.structuredData.is_qualified.toString()}</p>
-          <p>{callResult.summary}</p>
-        </div>
-      )}
-
-      {(loading || loadingResult) && <div className="loading"></div>}
+      {loading && <div className="loading">Loading…</div>}
 
       {started && (
         <ActiveCallDetails
@@ -127,6 +134,17 @@ export default function App() {
           volumeLevel={volumeLevel}
           endCallCallback={handleStop}
         />
+      )}
+
+      {loadingResult && <p>Loading call details…</p>}
+
+      {callResult && (
+        <div className="call-result">
+          <p>
+            Qualified: {callResult.analysis.structuredData.is_qualified.toString()}
+          </p>
+          <p>{callResult.summary}</p>
+        </div>
       )}
     </div>
   );
