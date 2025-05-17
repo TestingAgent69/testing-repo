@@ -2,42 +2,17 @@ import { useState, useEffect } from "react";
 import { vapi, startAssistant, stopAssistant } from "./ai";
 import ActiveCallDetails from "./call/ActiveCallDetails";
 
-// Compute “today” metadata in a given IANA timezone
+// Compute “today” metadata using UTC and IANA zone
 function getTodayInfo(timeZoneId) {
   const now = new Date();
-
-  // Build ISO timestamp components in that zone
-  const parts = new Intl.DateTimeFormat("sv-SE", {
-    timeZone: timeZoneId,
-    year: "numeric",
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  })
-    .formatToParts(now)
-    .reduce(
-      (acc, p) => {
-        if (["year", "month", "day"].includes(p.type)) acc.date.push(p.value);
-        if (["hour", "minute", "second"].includes(p.type)) acc.time.push(p.value);
-        return acc;
-      },
-      [[], []]
-    );
-
-  const datePart = parts[0].join("-");
-  const timePart = parts[1].join(":");
-  const iso = `${datePart}T${timePart}`;
-
-  // Day of week in that timezone
+  // ISO 8601 in UTC
+  const today = now.toISOString();
+  // Weekday name in user's timezone
   const dayOfWeek = new Intl.DateTimeFormat("en-US", {
     weekday: "long",
     timeZone: timeZoneId,
   }).format(now);
-
-  return { today: iso, dayOfWeek, timeZone: timeZoneId };
+  return { today, dayOfWeek, timeZone: timeZoneId };
 }
 
 export default function App() {
@@ -71,13 +46,13 @@ export default function App() {
     try {
       setLoading(true);
       const meta = getTodayInfo(selectedTZ);
-      console.log("Starting assistant with:", meta);
+      console.log("Starting assistant with metadata:", meta);
       const data = await startAssistant(meta);
-      console.log("Started callId=", data.id);
+      console.log("Assistant started, callId =", data.id);
       setCallId(data.id);
     } catch (err) {
       console.error(err);
-      alert("Error starting assistant—see console.");
+      alert("Error starting assistant — see console.");
       setLoading(false);
     }
   };
@@ -101,7 +76,7 @@ export default function App() {
       })
       .catch((e) => {
         console.error(e);
-        alert("Error fetching call details.");
+        alert("Error fetching call details — see console.");
       });
   };
 
