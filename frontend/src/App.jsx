@@ -2,6 +2,25 @@ import { useState, useEffect } from "react";
 import { vapi, startAssistant, stopAssistant } from "./ai";
 import ActiveCallDetails from "./call/ActiveCallDetails";
 
+// Helper to get current date/time info
+function getTodayInfo() {
+  const now = new Date();
+  // Day of week
+  const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
+  // ISO timestamp
+  const iso = now.toISOString();
+  // Timezone offset
+  const timezoneOffset = (() => {
+    const off = now.getTimezoneOffset();
+    const sign = off <= 0 ? '+' : '-';
+    const hrs = String(Math.abs(Math.floor(off / 60))).padStart(2, '0');
+    const mins = String(Math.abs(off % 60)).padStart(2, '0');
+    return `UTC${sign}${hrs}:${mins}`;
+  })();
+
+  return { date: now, dayOfWeek, iso, timezone: timezoneOffset };
+}
+
 function App() {
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -34,7 +53,14 @@ function App() {
 
   const handleStart = async () => {
     setLoading(true);
-    const data = await startAssistant(); // Now no parameters needed
+    // Grab current date/time context
+    const todayInfo = getTodayInfo();
+    // Pass today's context into assistant
+    const data = await startAssistant({
+      today: todayInfo.iso,
+      dayOfWeek: todayInfo.dayOfWeek,
+      timezone: todayInfo.timezone
+    });
     setCallId(data.id);
   };
 
