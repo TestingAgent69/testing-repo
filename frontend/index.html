@@ -8,40 +8,6 @@
   </head>
   <body>
     <div id="root"></div>
-      <div id="datetime-display" style="font-size: 1.2em; margin-top: 20px;">
-    <!-- The current date and time will appear here -->
-      </div>
-    <script>
-  // Function to update the date and time
-  function updateDateTime() {
-    const now = new Date();
-
-    // Format the date and time
-    const localDateTime = now.toLocaleString();
-    const dayOfWeek = now.toLocaleDateString('en-IN', { weekday: 'long' });
-
-    // Calculate the time zone offset
-    const timezoneOffset = now.getTimezoneOffset();
-    const offsetHours = Math.floor(Math.abs(timezoneOffset) / 60);
-    const offsetMinutes = Math.abs(timezoneOffset) % 60;
-    const offsetSign = timezoneOffset <= 0 ? '+' : '-';
-    const timezone = `UTC${offsetSign}${offsetHours.toString().padStart(2, '0')}:${offsetMinutes.toString().padStart(2, '0')}`;
-
-    // Display the information
-    const displayElement = document.getElementById('datetime-display');
-    displayElement.innerHTML = `
-      <strong>Current Date and Time:</strong> ${localDateTime}<br>
-      <strong>Day of the Week:</strong> ${dayOfWeek}<br>
-      <strong>Time Zone:</strong> ${timezone}
-    `;
-  }
-
-  // Update the date and time immediately
-  updateDateTime();
-
-  // Optional: Update every minute
-  setInterval(updateDateTime, 60000);
-    </script>
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
