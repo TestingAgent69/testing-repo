@@ -2,23 +2,28 @@ import { useState, useEffect } from "react";
 import { vapi, startAssistant, stopAssistant } from "./ai";
 import ActiveCallDetails from "./call/ActiveCallDetails";
 
-// Compute “today” metadata but do NOT display it on screen
-function getTodayInfo() {
+// Compute “today” metadata based on selected IANA time zone
+function getTodayInfo(timeZoneId) {
   const now = new Date();
-  // e.g. "Sunday"
-  const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
-  // ISO timestamp, e.g. "2025-05-17T13:45:30.000Z"
-  const iso = now.toISOString();
-  // e.g. "UTC+05:30"
-  const timezoneOffset = (() => {
-    const off = now.getTimezoneOffset();
-    const sign = off <= 0 ? "+" : "-";
-    const hrs = String(Math.abs(Math.floor(off / 60))).padStart(2, "0");
-    const mins = String(Math.abs(off % 60)).padStart(2, "0");
-    return `UTC${sign}${hrs}:${mins}`;
-  })();
+  // Format a full ISO-like string in the target timezone
+  const isoFormatter = new Intl.DateTimeFormat('sv-SE', {
+    timeZone: timeZoneId,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false
+  });
+  const [[,, datePart], [timePart]] = isoFormatter.formatToParts(now)
+    .reduce((acc, part) => {
+      if (part.type === 'year' || part.type === 'month' || part.type === 'day') acc[0].push(part.value);
+      if (part.type === 'hour' || part.type === 'minute' || part.type === 'second') acc[1].push(part.value);
+      return acc;
+    }, [[], []]);
+  const iso = `${datePart.replace(/-/g, '-') }T${timePart}`;
 
-  return { today: iso, dayOfWeek, timezone: timezoneOffset };
+  // Day of week in that timezone
+  const dayOfWeek = new Intl.DateTimeFormat('en-US', { weekday: 'long', timeZone: timeZoneId }).format(now);
+
+  return { today: iso, dayOfWeek, timeZone: timeZoneId };
 }
 
 export default function App() {
@@ -30,7 +35,10 @@ export default function App() {
   const [callResult, setCallResult] = useState(null);
   const [loadingResult, setLoadingResult] = useState(false);
 
-  // Wire up VAPI event listeners
+  // Let user pick an IANA timezone
+  const localTZ = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const [selectedTZ, setSelectedTZ] = useState(localTZ);
+
   useEffect(() => {
     vapi
       .on("call-start", () => {
@@ -52,25 +60,14 @@ export default function App() {
       });
   }, []);
 
-  // User clicks “Start Assistant”
   const handleStart = async () => {
     setLoading(true);
 
-    // 1) Compute today metadata
-    const todayInfo = getTodayInfo();
+    // Compute metadata for the selected timezone
+    const todayInfo = getTodayInfo(selectedTZ);
 
-    // 2) Build a single user message from the input field
-    const userMessage = {
-      role: "user",
-      content: bookingDate  // from state (see below)
-    };
-
-    // 3) Start the assistant, sending system + user message
-    const data = await startAssistant(
-      todayInfo,
-      [userMessage]
-    );
-
+    // Start assistant with only today metadata
+    const data = await startAssistant(todayInfo);
     setCallId(data.id);
   };
 
@@ -79,7 +76,6 @@ export default function App() {
     getCallDetails();
   };
 
-  // Poll for results
   const getCallDetails = (interval = 3000) => {
     setLoadingResult(true);
     fetch("/call-details?call_id=" + callId)
@@ -95,33 +91,30 @@ export default function App() {
       .catch((err) => alert(err));
   };
 
-  // Local state for the user’s free-form date request
-  const [bookingDate, setBookingDate] = useState("");
-
   return (
     <div className="app-container">
       {!loading && !started && !loadingResult && !callResult && (
-        <>
-          <h1>Book a call with the Assistant</h1>
-          <input
-            type="text"
-            placeholder="e.g. Sunday at 3pm"
-            value={bookingDate}
-            onChange={(e) => setBookingDate(e.target.value)}
-          />
-          <button onClick={handleStart} className="button">
+        <div>
+          <h2>Select Your Time Zone</h2>
+          <select value={selectedTZ} onChange={e => setSelectedTZ(e.target.value)}>
+            <option value={localTZ}>{localTZ} (Local)</option>
+            <option value="UTC">UTC</option>
+            <option value="America/New_York">America/New_York (EST/EDT)</option>
+            <option value="Europe/London">Europe/London (GMT/BST)</option>
+            <option value="Asia/Kolkata">Asia/Kolkata (IST)</option>
+            {/* Add more IANA zones as needed */}
+          </select>
+          <button onClick={handleStart} className="button" style={{ marginLeft: '1rem' }}>
             Start Assistant
           </button>
-        </>
+        </div>
       )}
 
       {loadingResult && <p>Loading call details... please wait</p>}
 
       {!loadingResult && callResult && (
         <div className="call-result">
-          <p>
-            Qualified: {callResult.analysis.structuredData.is_qualified.toString()}
-          </p>
+          <p>Qualified: {callResult.analysis.structuredData.is_qualified.toString()}</p>
           <p>{callResult.summary}</p>
         </div>
       )}
