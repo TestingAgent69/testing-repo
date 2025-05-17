@@ -2,26 +2,26 @@ import { useState, useEffect } from "react";
 import { vapi, startAssistant, stopAssistant } from "./ai";
 import ActiveCallDetails from "./call/ActiveCallDetails";
 
-// Helper to get current date/time info
+// Compute “today” metadata but do NOT display it on screen
 function getTodayInfo() {
   const now = new Date();
-  // Day of week
-  const dayOfWeek = now.toLocaleDateString('en-US', { weekday: 'long' });
-  // ISO timestamp
+  // e.g. "Sunday"
+  const dayOfWeek = now.toLocaleDateString("en-US", { weekday: "long" });
+  // ISO timestamp, e.g. "2025-05-17T13:45:30.000Z"
   const iso = now.toISOString();
-  // Timezone offset
+  // e.g. "UTC+05:30"
   const timezoneOffset = (() => {
     const off = now.getTimezoneOffset();
-    const sign = off <= 0 ? '+' : '-';
-    const hrs = String(Math.abs(Math.floor(off / 60))).padStart(2, '0');
-    const mins = String(Math.abs(off % 60)).padStart(2, '0');
+    const sign = off <= 0 ? "+" : "-";
+    const hrs = String(Math.abs(Math.floor(off / 60))).padStart(2, "0");
+    const mins = String(Math.abs(off % 60)).padStart(2, "0");
     return `UTC${sign}${hrs}:${mins}`;
   })();
 
-  return { date: now, dayOfWeek, iso, timezone: timezoneOffset };
+  return { today: iso, dayOfWeek, timezone: timezoneOffset };
 }
 
-function App() {
+export default function App() {
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [assistantIsSpeaking, setAssistantIsSpeaking] = useState(false);
@@ -30,6 +30,7 @@ function App() {
   const [callResult, setCallResult] = useState(null);
   const [loadingResult, setLoadingResult] = useState(false);
 
+  // Wire up VAPI event listeners
   useEffect(() => {
     vapi
       .on("call-start", () => {
@@ -51,16 +52,25 @@ function App() {
       });
   }, []);
 
+  // User clicks “Start Assistant”
   const handleStart = async () => {
     setLoading(true);
-    // Grab current date/time context
+
+    // 1) Compute today metadata
     const todayInfo = getTodayInfo();
-    // Pass today's context into assistant
-    const data = await startAssistant({
-      today: todayInfo.iso,
-      dayOfWeek: todayInfo.dayOfWeek,
-      timezone: todayInfo.timezone
-    });
+
+    // 2) Build a single user message from the input field
+    const userMessage = {
+      role: "user",
+      content: bookingDate  // from state (see below)
+    };
+
+    // 3) Start the assistant, sending system + user message
+    const data = await startAssistant(
+      todayInfo,
+      [userMessage]
+    );
+
     setCallId(data.id);
   };
 
@@ -69,35 +79,49 @@ function App() {
     getCallDetails();
   };
 
+  // Poll for results
   const getCallDetails = (interval = 3000) => {
     setLoadingResult(true);
     fetch("/call-details?call_id=" + callId)
-      .then((response) => response.json())
+      .then((r) => r.json())
       .then((data) => {
         if (data.analysis && data.summary) {
-          console.log(data);
           setCallResult(data);
           setLoadingResult(false);
         } else {
           setTimeout(() => getCallDetails(interval), interval);
         }
       })
-      .catch((error) => alert(error));
+      .catch((err) => alert(err));
   };
+
+  // Local state for the user’s free-form date request
+  const [bookingDate, setBookingDate] = useState("");
 
   return (
     <div className="app-container">
       {!loading && !started && !loadingResult && !callResult && (
-        <button onClick={handleStart} className="button">
-          Start Assistant
-        </button>
+        <>
+          <h1>Book a call with the Assistant</h1>
+          <input
+            type="text"
+            placeholder="e.g. Sunday at 3pm"
+            value={bookingDate}
+            onChange={(e) => setBookingDate(e.target.value)}
+          />
+          <button onClick={handleStart} className="button">
+            Start Assistant
+          </button>
+        </>
       )}
 
       {loadingResult && <p>Loading call details... please wait</p>}
 
       {!loadingResult && callResult && (
         <div className="call-result">
-          <p>Qualified: {callResult.analysis.structuredData.is_qualified.toString()}</p>
+          <p>
+            Qualified: {callResult.analysis.structuredData.is_qualified.toString()}
+          </p>
           <p>{callResult.summary}</p>
         </div>
       )}
@@ -114,5 +138,3 @@ function App() {
     </div>
   );
 }
-
-export default App;
