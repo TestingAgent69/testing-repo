@@ -2,23 +2,7 @@ import { useState, useEffect } from "react";
 import { vapi, startAssistant, stopAssistant } from "./ai";
 import ActiveCallDetails from "./call/ActiveCallDetails";
 
-// Compute “today” metadata using UTC and IANA zone
-function getTodayInfo(timeZoneId) {
-  const now = new Date();
-  // ISO 8601 in UTC
-  const today = now.toISOString();
-  // Weekday name in user's timezone
-  const dayOfWeek = new Intl.DateTimeFormat("en-US", {
-    weekday: "long",
-    timeZone: timeZoneId,
-  }).format(now);
-  return { today, dayOfWeek, timeZone: timeZoneId };
-}
-
-export default function App() {
-  const [selectedTZ, setSelectedTZ] = useState(
-    Intl.DateTimeFormat().resolvedOptions().timeZone
-  );
+function App() {
   const [started, setStarted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [assistantIsSpeaking, setAssistantIsSpeaking] = useState(false);
@@ -26,6 +10,11 @@ export default function App() {
   const [callId, setCallId] = useState("");
   const [callResult, setCallResult] = useState(null);
   const [loadingResult, setLoadingResult] = useState(false);
+
+  const [firstName, setFirstName] = useState("");
+  const [lastName, setLastName] = useState("");
+  const [phoneNumber, setPhoneNumber] = useState("");
+  const [email, setEmail] = useState("");
 
   useEffect(() => {
     vapi
@@ -37,72 +26,103 @@ export default function App() {
         setStarted(false);
         setLoading(false);
       })
-      .on("speech-start", () => setAssistantIsSpeaking(true))
-      .on("speech-end", () => setAssistantIsSpeaking(false))
-      .on("volume-level", (lvl) => setVolumeLevel(lvl));
+      .on("speech-start", () => {
+        setAssistantIsSpeaking(true);
+      })
+      .on("speech-end", () => {
+        setAssistantIsSpeaking(false);
+      })
+      .on("volume-level", (level) => {
+        setVolumeLevel(level);
+      });
   }, []);
 
+  const handleInputChange = (setter) => (event) => {
+    setter(event.target.value);
+  };
+
   const handleStart = async () => {
-    try {
-      setLoading(true);
-      const meta = getTodayInfo(selectedTZ);
-      console.log("Starting assistant with metadata:", meta);
-      const data = await startAssistant(meta);
-      console.log("Assistant started, callId =", data.id);
-      setCallId(data.id);
-    } catch (err) {
-      console.error(err);
-      alert("Error starting assistant — see console.");
-      setLoading(false);
-    }
+    setLoading(true);
+    const data = await startAssistant(firstName, lastName, email, phoneNumber);
+    setCallId(data.id);
   };
 
   const handleStop = () => {
     stopAssistant();
-    pollForResults();
+    getCallDetails();
   };
 
-  const pollForResults = (interval = 3000) => {
+  const getCallDetails = (interval = 3000) => {
     setLoadingResult(true);
-    fetch(`/call-details?call_id=${callId}`)
-      .then((r) => r.json())
+    fetch("/call-details?call_id=" + callId)
+      .then((response) => response.json())
       .then((data) => {
         if (data.analysis && data.summary) {
+          console.log(data);
           setCallResult(data);
           setLoadingResult(false);
         } else {
-          setTimeout(() => pollForResults(interval), interval);
+          setTimeout(() => getCallDetails(interval), interval);
         }
       })
-      .catch((e) => {
-        console.error(e);
-        alert("Error fetching call details — see console.");
-      });
+      .catch((error) => alert(error));
   };
+
+  const showForm = !loading && !started && !loadingResult && !callResult;
+  const allFieldsFilled = firstName && lastName && email && phoneNumber;
 
   return (
     <div className="app-container">
-      {!started && !loading && !callResult && !loadingResult && (
-        <div>
-          <h2>Select Your Time Zone</h2>
-          <select
-            value={selectedTZ}
-            onChange={(e) => setSelectedTZ(e.target.value)}
-          >
-            <option value={selectedTZ}>{`${selectedTZ} (Local)`}</option>
-            <option value="UTC">UTC</option>
-            <option value="America/New_York">America/New_York</option>
-            <option value="Europe/London">Europe/London</option>
-            <option value="Asia/Kolkata">Asia/Kolkata</option>
-          </select>
-          <button onClick={handleStart} className="button">
-            Start Assistant
-          </button>
+      {showForm && (
+        <>
+          <h1>Contact Details (Required)</h1>
+          <input
+            type="text"
+            placeholder="First Name"
+            value={firstName}
+            className="input-field"
+            onChange={handleInputChange(setFirstName)}
+          />
+          <input
+            type="text"
+            placeholder="Last Name"
+            value={lastName}
+            className="input-field"
+            onChange={handleInputChange(setLastName)}
+          />
+          <input
+            type="email"
+            placeholder="Email address"
+            value={email}
+            className="input-field"
+            onChange={handleInputChange(setEmail)}
+          />
+          <input
+            type="tel"
+            placeholder="Phone number"
+            value={phoneNumber}
+            className="input-field"
+            onChange={handleInputChange(setPhoneNumber)}
+          />
+          {!started && (
+            <button
+              onClick={handleStart}
+              disabled={!allFieldsFilled}
+              className="button"
+            >
+              Start Application Call
+            </button>
+          )}
+        </>
+      )}
+      {loadingResult && <p>Loading call details... please wait</p>}
+      {!loadingResult && callResult && (
+        <div className="call-result">
+          <p>Qualified: {callResult.analysis.structuredData.is_qualified.toString()}</p>
+          <p>{callResult.summary}</p>
         </div>
       )}
-
-      {loading && <div className="loading">Loading…</div>}
-
+      {(loading || loadingResult) && <div className="loading"></div>}
       {started && (
         <ActiveCallDetails
           assistantIsSpeaking={assistantIsSpeaking}
@@ -110,17 +130,8 @@ export default function App() {
           endCallCallback={handleStop}
         />
       )}
-
-      {loadingResult && <p>Loading call details…</p>}
-
-      {callResult && (
-        <div className="call-result">
-          <p>
-            Qualified: {callResult.analysis.structuredData.is_qualified.toString()}
-          </p>
-          <p>{callResult.summary}</p>
-        </div>
-      )}
     </div>
   );
 }
+
+export default App;
